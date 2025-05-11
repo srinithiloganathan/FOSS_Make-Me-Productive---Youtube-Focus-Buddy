@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Focus Filter",
+  "version": "1.0",
+  "description": "Hide distracting entertainment videos and focus only on educational content.",
+  "permissions": ["storage", "scripting", "tabs"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://www.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  }
+}
