@@ -1,5 +1,6 @@
 const entertainmentKeywords = [
-  "music", "comedy", "trailer", "gameplay", "reaction", "vlog", "promo",
+  "music", "comedy", "trailer", "gameplay", "reaction", "vlog", "promo", "husband", "wife", "couple",
+  "boyfriend", "girlfriend", "family", "friends", "fun", "entertainment", "shorts", "youtube shorts",
   "bollywood", "tollywood", "kollywood", "tamil", "dance", "short film",
   "hook step", "songs", "bgm", "teaser", "funny", "meme", "celebrity", "romantic",
   "love", "open talk", "relationship", "trip", "galatta", "dance show", "singing show",
@@ -79,10 +80,14 @@ const motivationalOverlayStyle = `
 
 let filterRunning = false;
 
-// Add these variables at the top of the file
 let stats = {
   filteredCount: 0,
-  educationalCount: 0
+  educationalCount: 0,
+  totalVideos: 0,
+  watchTime: {
+    educational: 0,
+    entertainment: 0
+  }
 };
 
 function isEducational(text) {
@@ -107,18 +112,126 @@ function getMotivationalMessage(keyword) {
   return messages[randomIndex];
 }
 
-// Modify the applyFilter function
+function trackVideoWatchTime() {
+  try {
+    const video = document.querySelector('video');
+    if (!video) return;
+
+    let isPlaying = false;
+    let startTime = 0;
+    
+    const handlePlay = () => {
+      try {
+        isPlaying = true;
+        startTime = Date.now();
+        
+        const videoTitle = document.querySelector('h1.ytd-video-primary-info-renderer')?.innerText || '';
+        const isEducationalVideo = isEducational(videoTitle);
+        
+        const watchTimeInterval = setInterval(() => {
+          try {
+            if (!isPlaying || !document.querySelector('video')) {
+              clearInterval(watchTimeInterval);
+              return;
+            }
+            
+            const currentTime = Date.now();
+            const watchDuration = (currentTime - startTime) / 1000;
+            
+            if (isEducationalVideo) {
+              stats.watchTime.educational += watchDuration;
+            } else {
+              stats.watchTime.entertainment += watchDuration;
+            }
+            
+            updateProductivityStats();
+            
+            startTime = currentTime;
+          } catch (error) {
+            clearInterval(watchTimeInterval);
+            console.log('Watch time interval error:', error);
+          }
+        }, 1000);
+      } catch (error) {
+        console.log('Play handler error:', error);
+      }
+    };
+    
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', () => {
+      isPlaying = false;
+    });
+  } catch (error) {
+    console.log('Video tracking setup error:', error);
+  }
+}
+
+function updateProductivityStats() {
+  const totalWatchTime = stats.watchTime.educational + stats.watchTime.entertainment;
+  const educationalPercentage = totalWatchTime > 0 
+    ? Math.round((stats.watchTime.educational / totalWatchTime) * 100) 
+    : 0;
+    
+  const productivityScore = calculateProductivityScore();
+  
+  chrome.runtime.sendMessage({
+    type: 'statsUpdate',
+    stats: {
+      ...stats,
+      educationalPercentage,
+      productivityScore,
+      totalVideos: stats.totalVideos
+    }
+  });
+}
+
+function calculateProductivityScore() {
+  const totalWatchTime = stats.watchTime.educational + stats.watchTime.entertainment;
+  const watchTimeScore = totalWatchTime > 0 
+    ? (stats.watchTime.educational / totalWatchTime) * 60 
+    : 0;
+    
+  const videoRatioScore = stats.totalVideos > 0 
+    ? (stats.educationalCount / stats.totalVideos) * 40 
+    : 0;
+    
+  return Math.round(watchTimeScore + videoRatioScore);
+}
+
 function applyFilter() {
   if (filterRunning) return;
   filterRunning = true;
 
-  // Reset counts for this scan
   let newFilteredCount = 0;
   let newEducationalCount = 0;
+  stats.totalVideos = 0;
 
-  const videoItems = document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer');
+  const videoItems = document.querySelectorAll(`
+    ytd-rich-item-renderer, 
+    ytd-video-renderer, 
+    ytd-grid-video-renderer,
+    ytd-compact-video-renderer,
+    ytd-compact-playlist-renderer,
+    ytd-compact-radio-renderer,
+    ytd-reel-item-renderer,
+    ytd-shorts,
+    ytd-in-feed-ad-layout-renderer,
+    ytd-promoted-video-renderer,
+    ytd-display-ad-renderer,
+    ytd-in-feed-ad-layout-renderer
+  `);
   
   videoItems.forEach(item => {
+    stats.totalVideos++;
+    
+    const isAd = item.tagName.toLowerCase().includes('ad') || 
+                 item.hasAttribute('id') && item.id.toLowerCase().includes('ad') ||
+                 item.classList.contains('ytd-promoted-video-renderer');
+
+    const isShort = item.tagName.toLowerCase().includes('reel') || 
+                   item.tagName.toLowerCase().includes('shorts') ||
+                   item.innerHTML.toLowerCase().includes('shorts');
+
     const textContent = item.innerText;
     const keyword = shouldFilterOut(textContent);
     
@@ -126,56 +239,51 @@ function applyFilter() {
       newEducationalCount++;
     }
     
-    if (keyword && !isEducational(textContent)) {
+    if ((isAd && !isEducational(textContent)) || isShort || (keyword && !isEducational(textContent))) {
       newFilteredCount++;
-      const dp = item.querySelector('ytd-channel-renderer img') || item.querySelector('img#img');
-      if (dp) dp.style.display = 'none';
+      
+      const thumbnail = item.querySelector('ytd-channel-renderer img, img#img, yt-image img, ytd-thumbnail img, #thumbnail img');
+      if (thumbnail) thumbnail.style.display = 'none';
+
       if (!item.querySelector('.focus-filter-overlay')) {
         const overlay = document.createElement('div');
         overlay.className = 'focus-filter-overlay';
-        overlay.setAttribute('style', motivationalOverlayStyle);
-        overlay.innerText = getMotivationalMessage(keyword);
+        overlay.setAttribute('style', motivationalOverlayStyle + `
+          font-size: 12px;
+          padding: 5px;
+        `);
+        
+        let message = isAd ? "Focus on content, not ads!" :
+                     isShort ? "Think long-term. Skip the Shorts." :
+                     getMotivationalMessage(keyword);
+                     
+        overlay.innerText = message;
         item.style.position = 'relative';
         item.appendChild(overlay);
       }
       item.style.opacity = '0.3';
       item.style.pointerEvents = 'none';
-    } else if (isEducational(textContent)) {
-      const overlay = item.querySelector('.focus-filter-overlay');
-      if (overlay) overlay.remove();
-      item.style.opacity = '';
-      item.style.pointerEvents = '';
-      const dp = item.querySelector('ytd-channel-renderer img') || item.querySelector('img#img');
-      if (dp) dp.style.display = '';
     } else {
       const overlay = item.querySelector('.focus-filter-overlay');
       if (overlay) overlay.remove();
       item.style.opacity = '';
       item.style.pointerEvents = '';
-      const dp = item.querySelector('ytd-channel-renderer img') || item.querySelector('img#img');
-      if (dp) dp.style.display = '';
+      const thumbnail = item.querySelector('ytd-channel-renderer img, img#img, yt-image img, ytd-thumbnail img, #thumbnail img');
+      if (thumbnail) thumbnail.style.display = '';
     }
   });
 
-  // Update stats
   stats.filteredCount = newFilteredCount;
   stats.educationalCount = newEducationalCount;
-
-  // Send stats to popup
-  chrome.runtime.sendMessage({
-    type: 'statsUpdate',
-    stats: {
-      filteredCount: stats.filteredCount,
-      educationalCount: stats.educationalCount
-    }
-  });
   
+  updateProductivityStats();
   filterRunning = false;
 }
 
 function initFilter() {
   filterRunning = false;
   applyFilter();
+  trackVideoWatchTime();
 
   const observer = new MutationObserver(() => {
     if (!filterRunning) {

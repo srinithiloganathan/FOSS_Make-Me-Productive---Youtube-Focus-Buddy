@@ -1,29 +1,63 @@
 document.addEventListener('DOMContentLoaded', function () {
+  const loaderContainer = document.getElementById('loaderContainer');
+  const loaderMessage = loaderContainer.querySelector('.loader-message');
+  
+  // Array of inspirational messages
+  const messages = [
+    "Loading your productivity insights...",
+    "Preparing to boost your focus...",
+    "Getting your learning stats ready...",
+    "Making YouTube work better for you...",
+    "Calculating your educational progress..."
+  ];
+  
+  // Show random message
+  loaderMessage.textContent = messages[Math.floor(Math.random() * messages.length)];
+
   const toggle = document.getElementById('toggleFilter');
   const filteredCount = document.getElementById('filteredCount');
   const educationalCount = document.getElementById('educationalCount');
   const productivityScore = document.getElementById('productivityScore');
+  const totalVideos = document.getElementById('totalVideos');
+  const educationalTime = document.getElementById('educationalTime');
+  const educationalProgress = document.getElementById('educationalProgress');
+  const educationalPercentage = document.getElementById('educationalPercentage');
 
-  // Load the current setting from storage
-  chrome.storage.sync.get(["distractionFilterEnabled"], (result) => {
-    toggle.checked = !!result.distractionFilterEnabled;
-  });
+  // Set a timeout to ensure loader shows for at least 500ms
+  const minimumLoaderTime = new Promise(resolve => setTimeout(resolve, 500));
 
-  // Listen for statistics updates from content script
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'statsUpdate') {
-      const stats = message.stats;
-      filteredCount.textContent = stats.filteredCount;
-      educationalCount.textContent = stats.educationalCount;
+  // Load the current setting and stats
+  Promise.all([
+    new Promise(resolve => chrome.storage.sync.get(['distractionFilterEnabled'], resolve)),
+    new Promise(resolve => chrome.storage.local.get(['videoStats'], resolve)),
+    minimumLoaderTime
+  ]).then(([settingsResult, statsResult]) => {
+    // Update toggle state
+    toggle.checked = !!settingsResult.distractionFilterEnabled;
+    
+    // Update stats display
+    if (statsResult.videoStats) {
+      const stats = statsResult.videoStats;
+      filteredCount.textContent = stats.filteredCount || 0;
+      educationalCount.textContent = stats.educationalCount || 0;
       
-      // Calculate productivity score
-      const totalVideos = stats.filteredCount + stats.educationalCount;
+      const totalVideos = (stats.filteredCount || 0) + (stats.educationalCount || 0);
       const score = totalVideos > 0 
         ? Math.round((stats.educationalCount / totalVideos) * 100) 
         : 100;
       
       productivityScore.textContent = `${score}%`;
     }
+    
+    // Hide loader
+    loaderContainer.style.opacity = '0';
+    setTimeout(() => {
+      loaderContainer.style.display = 'none';
+    }, 200);
+  }).catch(error => {
+    console.error('Error loading stats:', error);
+    // Hide loader even if there's an error
+    loaderContainer.style.display = 'none';
   });
 
   // Listen for changes to the toggle switch
@@ -46,4 +80,27 @@ document.addEventListener('DOMContentLoaded', function () {
       productivityScore.textContent = stats.productivity + '%';
     }
   });
+});
+
+// Update the message listener to handle stats updates
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'statsUpdate' && message.stats) {
+    const stats = message.stats;
+    
+    // Update existing stats
+    filteredCount.textContent = stats.filteredCount || 0;
+    educationalCount.textContent = stats.educationalCount || 0;
+    totalVideos.textContent = stats.totalVideos || 0;
+    
+    // Update educational time
+    const minutes = Math.round(stats.watchTime?.educational / 60) || 0;
+    educationalTime.textContent = `${minutes} min`;
+    
+    // Update educational percentage
+    educationalProgress.style.width = `${stats.educationalPercentage}%`;
+    educationalPercentage.textContent = `${stats.educationalPercentage}%`;
+    
+    // Update productivity score
+    productivityScore.textContent = `${stats.productivityScore}%`;
+  }
 });
