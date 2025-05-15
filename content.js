@@ -79,6 +79,12 @@ const motivationalOverlayStyle = `
 
 let filterRunning = false;
 
+// Add these variables at the top of the file
+let stats = {
+  filteredCount: 0,
+  educationalCount: 0
+};
+
 function isEducational(text) {
   return educationalKeywords.some(keyword =>
     text.toLowerCase().includes(keyword)
@@ -101,9 +107,14 @@ function getMotivationalMessage(keyword) {
   return messages[randomIndex];
 }
 
+// Modify the applyFilter function
 function applyFilter() {
   if (filterRunning) return;
   filterRunning = true;
+
+  // Reset counts for this scan
+  let newFilteredCount = 0;
+  let newEducationalCount = 0;
 
   const videoItems = document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer');
   
@@ -111,22 +122,51 @@ function applyFilter() {
     const textContent = item.innerText;
     const keyword = shouldFilterOut(textContent);
     
+    if (isEducational(textContent)) {
+      newEducationalCount++;
+    }
+    
     if (keyword && !isEducational(textContent)) {
+      newFilteredCount++;
       const dp = item.querySelector('ytd-channel-renderer img') || item.querySelector('img#img');
       if (dp) dp.style.display = 'none';
-      
       if (!item.querySelector('.focus-filter-overlay')) {
         const overlay = document.createElement('div');
         overlay.className = 'focus-filter-overlay';
         overlay.setAttribute('style', motivationalOverlayStyle);
         overlay.innerText = getMotivationalMessage(keyword);
-        
         item.style.position = 'relative';
         item.appendChild(overlay);
       }
-      
       item.style.opacity = '0.3';
       item.style.pointerEvents = 'none';
+    } else if (isEducational(textContent)) {
+      const overlay = item.querySelector('.focus-filter-overlay');
+      if (overlay) overlay.remove();
+      item.style.opacity = '';
+      item.style.pointerEvents = '';
+      const dp = item.querySelector('ytd-channel-renderer img') || item.querySelector('img#img');
+      if (dp) dp.style.display = '';
+    } else {
+      const overlay = item.querySelector('.focus-filter-overlay');
+      if (overlay) overlay.remove();
+      item.style.opacity = '';
+      item.style.pointerEvents = '';
+      const dp = item.querySelector('ytd-channel-renderer img') || item.querySelector('img#img');
+      if (dp) dp.style.display = '';
+    }
+  });
+
+  // Update stats
+  stats.filteredCount = newFilteredCount;
+  stats.educationalCount = newEducationalCount;
+
+  // Send stats to popup
+  chrome.runtime.sendMessage({
+    type: 'statsUpdate',
+    stats: {
+      filteredCount: stats.filteredCount,
+      educationalCount: stats.educationalCount
     }
   });
   
