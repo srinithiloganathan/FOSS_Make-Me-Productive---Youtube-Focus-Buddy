@@ -1,18 +1,43 @@
 # YouTube Focus Filter
 
-YouTube Focus Filter is a Chrome extension designed to help users stay focused by hiding distracting entertainment videos on YouTube and highlighting educational content.
+YouTube Focus Filter is a Chrome extension designed to help users stay focused by hiding distracting entertainment videos on YouTube while highlighting educational content. It includes productivity tracking to help users understand and improve their learning habits.
 
 ## Features
 
-- **Comprehensive Keyword Filtering**: Filters out videos containing a wide range of entertainment-related keywords, such as "music", "comedy", "prank", "trailer", and more.
-- **Educational Content Whitelisting**: Ensures that videos with educational keywords like "tutorial", "lesson", "course", and "study" remain visible.
-- **Motivational Overlays**: Displays motivational messages over hidden videos to encourage users to stay focused.
-- **Dynamic DOM Monitoring**: Uses a MutationObserver to detect and filter newly loaded content dynamically.
-- **Customizable Messages**: Provides specific motivational messages for different types of distracting content.
-- **Opacity and Interaction Control**: Reduces the opacity of filtered videos and disables user interaction with them.
-- **Toggle Filter**: Allows users to enable or disable the distraction filter via the extension's popup interface.
-- **Real-Time Updates**: Automatically applies or removes the filter when the toggle state is changed.
-- **Chrome Storage Integration**: Saves the filter's enabled/disabled state using Chrome's `storage.sync` API.
+- **Smart Content Filtering**: 
+  - Automatically detects and filters non-educational content using an extensive keyword database
+  - Preserves educational videos like tutorials, courses, and lectures
+  - Real-time filtering of newly loaded content
+
+- **Productivity Analytics**:
+  - Tracks the number of educational vs non-educational videos viewed
+  - Measures educational watch time
+  - Calculates your personalized productivity score
+  - Provides real-time progress visualization
+
+- **User-Friendly Interface**:
+  - Clean, modern popup interface with productivity statistics
+  - Easy toggle switch to enable/disable filtering
+  - Visual progress bars and percentages
+  - Productivity score display
+
+- **Motivational Features**:
+  - Context-aware motivational messages for different types of distracting content
+  - Elegant overlay design with blur effect
+  - Encouraging messages to keep you focused on learning
+
+- **Privacy-Focused**:
+  - Works entirely in your browser
+  - No data collection or external services
+  - Settings sync across your Chrome instances
+
+## Benefits
+
+- **Enhanced Learning**: Focus only on educational content that adds value to your learning journey
+- **Time Management**: Reduce time spent on entertainment videos during study/work hours
+- **Progress Tracking**: Monitor your YouTube usage patterns and educational content consumption
+- **Behavior Change**: Motivational messages help build better viewing habits
+- **Productivity Boost**: Clear visualization of your productivity helps maintain focus
 
 ## Installation
 
@@ -23,9 +48,15 @@ YouTube Focus Filter is a Chrome extension designed to help users stay focused b
 
 ## Usage
 
-1. Click on the extension icon in the Chrome toolbar to open the popup.
-2. Use the toggle switch to enable or disable the distraction filter.
-3. Reload the YouTube tab to apply the changes.
+1. Click the extension icon in your Chrome toolbar
+2. Toggle "Make Me Productive" to enable/disable filtering
+3. Visit YouTube to see the changes in action
+4. Check your productivity stats in the popup window:
+   - Number of filtered videos
+   - Educational video count
+   - Educational watch time
+   - Productivity score
+   - Educational content percentage
 
 ## File Structure
 
