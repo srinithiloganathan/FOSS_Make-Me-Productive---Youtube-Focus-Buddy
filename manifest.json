@@ -1,9 +1,11 @@
 {
+"update_url": "https://clients2.google.com/service/update2/crx",
+
   "manifest_version": 3,
-  "name": "YouTube Focus Filter",
+  "name": "Make Me Productive - YouTube Focus Buddy",
   "version": "1.0",
   "description": "Hide distracting entertainment videos and focus only on educational content.",
-  "permissions": ["storage", "scripting", "tabs"],
+  "permissions": ["storage", "tabs"],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {

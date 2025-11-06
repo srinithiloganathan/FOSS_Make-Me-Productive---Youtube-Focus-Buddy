@@ -167,22 +167,70 @@ function trackVideoWatchTime() {
 }
 
 function updateProductivityStats() {
-  const totalWatchTime = stats.watchTime.educational + stats.watchTime.entertainment;
-  const educationalPercentage = totalWatchTime > 0 
-    ? Math.round((stats.watchTime.educational / totalWatchTime) * 100) 
-    : 0;
+  try {
+    const totalWatchTime = stats.watchTime.educational + stats.watchTime.entertainment;
+    const educationalPercentage = totalWatchTime > 0 
+      ? Math.round((stats.watchTime.educational / totalWatchTime) * 100) 
+      : 0;
+      
+    const watchTimeScore = totalWatchTime > 0 
+      ? (stats.watchTime.educational / totalWatchTime) * 60 
+      : 0;
     
-  const productivityScore = calculateProductivityScore();
-  
-  chrome.runtime.sendMessage({
-    type: 'statsUpdate',
-    stats: {
-      ...stats,
-      educationalPercentage,
-      productivityScore,
-      totalVideos: stats.totalVideos
+    const videoRatioScore = stats.totalVideos > 0 
+      ? (stats.educationalCount / stats.totalVideos) * 40 
+      : 0;
+    
+    const productivityScore = Math.round(watchTimeScore + videoRatioScore);
+    
+    // Save stats to local storage first as backup
+    chrome.storage.local.set({
+      videoStats: {
+        ...stats,
+        educationalPercentage,
+        productivityScore,
+        totalVideos: stats.totalVideos,
+        lastUpdated: Date.now(),
+        scoreBreakdown: {
+          watchTimeScore: Math.round(watchTimeScore),
+          videoRatioScore: Math.round(videoRatioScore),
+          watchTimePercent: totalWatchTime > 0 ? Math.round((stats.watchTime.educational / totalWatchTime) * 100) : 0,
+          videoRatioPercent: stats.totalVideos > 0 ? Math.round((stats.educationalCount / stats.totalVideos) * 100) : 0
+        }
+      }
+    });
+
+    // Then try to send message with score breakdown
+    chrome.runtime.sendMessage({
+      type: 'statsUpdate',
+      stats: {
+        ...stats,
+        educationalPercentage,
+        productivityScore,
+        totalVideos: stats.totalVideos,
+        scoreBreakdown: {
+          watchTimeScore: Math.round(watchTimeScore),
+          videoRatioScore: Math.round(videoRatioScore),
+          watchTimePercent: totalWatchTime > 0 ? Math.round((stats.watchTime.educational / totalWatchTime) * 100) : 0,
+          videoRatioPercent: stats.totalVideos > 0 ? Math.round((stats.educationalCount / stats.totalVideos) * 100) : 0
+        }
+      }
+    }, response => {
+      if (chrome.runtime.lastError) {
+        console.log('Stats update error:', chrome.runtime.lastError);
+        // Re-initialize the content script if extension context is invalid
+        if (chrome.runtime.lastError.message.includes('Extension context invalidated')) {
+          window.location.reload();
+        }
+      }
+    });
+  } catch (error) {
+    console.log('Stats update error:', error);
+    // If extension context is invalid, reload the page
+    if (error.message.includes('Extension context invalidated')) {
+      window.location.reload();
     }
-  });
+  }
 }
 
 function calculateProductivityScore() {
@@ -198,101 +246,208 @@ function calculateProductivityScore() {
   return Math.round(watchTimeScore + videoRatioScore);
 }
 
+// Add debounce function at the top with other utility functions
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+const debouncedUpdateStats = debounce(updateProductivityStats, 300);
+
+const processVideo = async (item) => {
+  // Mark as processed
+  item.setAttribute('data-processed', 'true');
+  stats.totalVideos++;
+  
+  const isAd = item.tagName.toLowerCase().includes('ad') || 
+               item.hasAttribute('id') && item.id.toLowerCase().includes('ad') ||
+               item.classList.contains('ytd-promoted-video-renderer');
+
+  const isShort = item.tagName.toLowerCase().includes('reel') || 
+                 item.tagName.toLowerCase().includes('shorts') ||
+                 item.innerHTML.toLowerCase().includes('shorts');
+
+  const textContent = item.innerText;
+  const keyword = shouldFilterOut(textContent);
+  
+  if (isEducational(textContent)) {
+    stats.educationalCount++;
+  }
+
+  if ((isAd && !isEducational(textContent)) || isShort || (keyword && !isEducational(textContent))) {
+    stats.filteredCount++;
+    
+    // Add transition effect
+    item.style.transition = 'opacity 0.3s ease';
+    
+    // Create and append overlay with animation
+    const overlay = document.createElement('div');
+    overlay.className = 'focus-filter-overlay';
+    overlay.style.cssText = motivationalOverlayStyle + `
+      opacity: 0;
+      transform: scale(0.95);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    `;
+
+    const message = isAd ? "Focus on content, not ads!" :
+                   isShort ? "Think long-term. Skip the Shorts." :
+                   getMotivationalMessage(keyword);
+    
+    overlay.textContent = message;
+    
+    item.style.position = 'relative';
+    item.appendChild(overlay);
+
+    // Hide thumbnail with fade
+    const thumbnails = item.querySelectorAll('ytd-channel-renderer img, img#img, yt-image img, ytd-thumbnail img, #thumbnail img');
+    thumbnails.forEach(thumbnail => {
+      thumbnail.style.transition = 'opacity 0.3s ease';
+      thumbnail.style.opacity = '0';
+    });
+
+    // Trigger animations
+    await new Promise(resolve => {
+      requestAnimationFrame(() => {
+        overlay.style.opacity = '1';
+        overlay.style.transform = 'scale(1)';
+        item.style.opacity = '0.3';
+        item.style.pointerEvents = 'none';
+
+        setTimeout(() => {
+          thumbnails.forEach(thumbnail => {
+            thumbnail.style.display = 'none';
+          });
+          resolve();
+        }, 300);
+      });
+    });
+  }
+  
+  // Use debounced update to prevent too many updates
+  debouncedUpdateStats();
+};
+
 function applyFilter() {
   if (filterRunning) return;
   filterRunning = true;
 
-  let newFilteredCount = 0;
-  let newEducationalCount = 0;
-  stats.totalVideos = 0;
+  // Use requestAnimationFrame for smooth animations
+  requestAnimationFrame(async () => {
+    try {
+      // Get only unprocessed videos (those without a data-processed attribute)
+      const videoItems = document.querySelectorAll(`
+        ytd-rich-item-renderer:not([data-processed]), 
+        ytd-video-renderer:not([data-processed]), 
+        ytd-grid-video-renderer:not([data-processed]),
+        ytd-compact-video-renderer:not([data-processed]),
+        ytd-compact-playlist-renderer:not([data-processed]),
+        ytd-compact-radio-renderer:not([data-processed]),
+        ytd-reel-item-renderer:not([data-processed]),
+        ytd-shorts:not([data-processed]),
+        ytd-in-feed-ad-layout-renderer:not([data-processed]),
+        ytd-promoted-video-renderer:not([data-processed]),
+        ytd-display-ad-renderer:not([data-processed])
+      `);
 
-  const videoItems = document.querySelectorAll(`
-    ytd-rich-item-renderer, 
-    ytd-video-renderer, 
-    ytd-grid-video-renderer,
-    ytd-compact-video-renderer,
-    ytd-compact-playlist-renderer,
-    ytd-compact-radio-renderer,
-    ytd-reel-item-renderer,
-    ytd-shorts,
-    ytd-in-feed-ad-layout-renderer,
-    ytd-promoted-video-renderer,
-    ytd-display-ad-renderer,
-    ytd-in-feed-ad-layout-renderer
-  `);
-  
-  videoItems.forEach(item => {
-    stats.totalVideos++;
-    
-    const isAd = item.tagName.toLowerCase().includes('ad') || 
-                 item.hasAttribute('id') && item.id.toLowerCase().includes('ad') ||
-                 item.classList.contains('ytd-promoted-video-renderer');
-
-    const isShort = item.tagName.toLowerCase().includes('reel') || 
-                   item.tagName.toLowerCase().includes('shorts') ||
-                   item.innerHTML.toLowerCase().includes('shorts');
-
-    const textContent = item.innerText;
-    const keyword = shouldFilterOut(textContent);
-    
-    if (isEducational(textContent)) {
-      newEducationalCount++;
-    }
-    
-    if ((isAd && !isEducational(textContent)) || isShort || (keyword && !isEducational(textContent))) {
-      newFilteredCount++;
-      
-      const thumbnail = item.querySelector('ytd-channel-renderer img, img#img, yt-image img, ytd-thumbnail img, #thumbnail img');
-      if (thumbnail) thumbnail.style.display = 'none';
-
-      if (!item.querySelector('.focus-filter-overlay')) {
-        const overlay = document.createElement('div');
-        overlay.className = 'focus-filter-overlay';
-        overlay.setAttribute('style', motivationalOverlayStyle + `
-          font-size: 12px;
-          padding: 5px;
-        `);
-        
-        let message = isAd ? "Focus on content, not ads!" :
-                     isShort ? "Think long-term. Skip the Shorts." :
-                     getMotivationalMessage(keyword);
-                     
-        overlay.innerText = message;
-        item.style.position = 'relative';
-        item.appendChild(overlay);
+      // Process videos one by one
+      for (const item of Array.from(videoItems)) {
+        await processVideo(item);
+        // Small delay between videos for smooth visual feedback
+        await new Promise(resolve => setTimeout(resolve, 50));
       }
-      item.style.opacity = '0.3';
-      item.style.pointerEvents = 'none';
-    } else {
-      const overlay = item.querySelector('.focus-filter-overlay');
-      if (overlay) overlay.remove();
-      item.style.opacity = '';
-      item.style.pointerEvents = '';
-      const thumbnail = item.querySelector('ytd-channel-renderer img, img#img, yt-image img, ytd-thumbnail img, #thumbnail img');
-      if (thumbnail) thumbnail.style.display = '';
+
+    } catch (error) {
+      console.log('Filter application error:', error);
+    } finally {
+      filterRunning = false;
     }
   });
-
-  stats.filteredCount = newFilteredCount;
-  stats.educationalCount = newEducationalCount;
-  
-  updateProductivityStats();
-  filterRunning = false;
 }
 
+// Modify observer to use Intersection Observer for scroll detection
 function initFilter() {
-  filterRunning = false;
-  applyFilter();
-  trackVideoWatchTime();
+  try {
+    // Reset stats when filter is initialized
+    stats = {
+      filteredCount: 0,
+      educationalCount: 0,
+      totalVideos: 0,
+      watchTime: {
+        educational: 0,
+        entertainment: 0
+      }
+    };
 
-  const observer = new MutationObserver(() => {
-    if (!filterRunning) {
-      applyFilter();
-    }
-  });
+    filterRunning = false;
+    applyFilter();
+    trackVideoWatchTime();
 
-  observer.observe(document.body, { childList: true, subtree: true });
-  return observer;
+    // Create mutation observer for new content
+    const mutationObserver = new MutationObserver(() => {
+      if (!filterRunning) {
+        applyFilter();
+      }
+    });
+
+    // Create intersection observer for scroll detection
+    const intersectionObserver = new IntersectionObserver((entries) => {
+      const processEntries = async () => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && !entry.target.hasAttribute('data-processed')) {
+            await processVideo(entry.target);
+          }
+        }
+      };
+      processEntries().catch(error => console.log('Error processing entries:', error));
+    }, {
+      root: null,
+      rootMargin: '100px', // Increased margin for better pre-loading
+      threshold: 0.1
+    });
+
+    // Observe DOM changes
+    mutationObserver.observe(document.body, { 
+      childList: true, 
+      subtree: true 
+    });
+
+    // Function to observe new videos
+    const observeNewVideos = () => {
+      const unprocessedVideos = document.querySelectorAll(`
+        ytd-rich-item-renderer:not([data-processed]), 
+        ytd-video-renderer:not([data-processed]),
+        ytd-grid-video-renderer:not([data-processed])
+      `);
+      unprocessedVideos.forEach(video => {
+        intersectionObserver.observe(video);
+      });
+    };
+
+    // Observe initial videos
+    observeNewVideos();
+
+    // Add observer for new videos being added
+    const newVideoObserver = new MutationObserver(observeNewVideos);
+    newVideoObserver.observe(document.body, { childList: true, subtree: true });
+
+    return {
+      disconnect: () => {
+        mutationObserver.disconnect();
+        intersectionObserver.disconnect();
+        newVideoObserver.disconnect();
+      }
+    };
+  } catch (error) {
+    console.log('Init filter error:', error);
+    return null;
+  }
 }
 
 let observer = null;
@@ -305,6 +460,7 @@ chrome.storage.sync.get(["distractionFilterEnabled"], result => {
   }
 });
 
+// Modify chrome.storage.onChanged listener to clear stats when filter is disabled
 chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'sync' && changes.distractionFilterEnabled) {
     if (changes.distractionFilterEnabled.newValue) {
@@ -318,6 +474,34 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
         observer = null;
       }
 
+      // Clear all stats from storage
+      chrome.storage.local.set({
+        videoStats: {
+          filteredCount: 0,
+          educationalCount: 0,
+          totalVideos: 0,
+          watchTime: {
+            educational: 0,
+            entertainment: 0
+          },
+          educationalPercentage: 0,
+          productivityScore: 0,
+          lastUpdated: Date.now()
+        }
+      });
+
+      // Reset stats object
+      stats = {
+        filteredCount: 0,
+        educationalCount: 0,
+        totalVideos: 0,
+        watchTime: {
+          educational: 0,
+          entertainment: 0
+        }
+      };
+
+      // Remove overlays and reset styles
       document.querySelectorAll('.focus-filter-overlay').forEach(overlay => {
         overlay.remove();
       });
@@ -325,10 +509,67 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
       document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer').forEach(item => {
         item.style.opacity = '';
         item.style.pointerEvents = '';
+        item.removeAttribute('data-processed');
 
-        const dp = item.querySelector('ytd-channel-renderer img') || item.querySelector('img#img');
-        if (dp) dp.style.display = '';
+        const thumbnails = item.querySelectorAll('ytd-channel-renderer img, img#img, yt-image img, ytd-thumbnail img, #thumbnail img');
+        thumbnails.forEach(thumbnail => {
+          thumbnail.style.display = '';
+          thumbnail.style.opacity = '';
+        });
       });
     }
   }
+});
+
+// Add message listener for toggle updates
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'toggleFilter') {
+    if (message.enabled) {
+      // Send response before reloading
+      sendResponse({ success: true });
+      // Reload the page to start fresh with filter enabled
+      window.location.reload();
+      return true;
+    } else {
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+      
+      // Immediately remove all filter-related styles
+      const videoSelectors = `
+        ytd-rich-item-renderer, 
+        ytd-video-renderer, 
+        ytd-grid-video-renderer,
+        ytd-compact-video-renderer,
+        ytd-compact-playlist-renderer,
+        ytd-compact-radio-renderer,
+        ytd-reel-item-renderer,
+        ytd-shorts,
+        ytd-in-feed-ad-layout-renderer,
+        ytd-promoted-video-renderer,
+        ytd-display-ad-renderer
+      `;
+
+      // Remove overlays
+      document.querySelectorAll('.focus-filter-overlay').forEach(overlay => {
+        overlay.remove();
+      });
+
+      // Reset all video item styles
+      document.querySelectorAll(videoSelectors).forEach(item => {
+        item.style.opacity = '';
+        item.style.pointerEvents = '';
+        item.style.position = '';
+        
+        // Reset all thumbnail images
+        const thumbnails = item.querySelectorAll('ytd-channel-renderer img, img#img, yt-image img, ytd-thumbnail img, #thumbnail img');
+        thumbnails.forEach(thumbnail => {
+          thumbnail.style.display = '';
+        });
+      });
+      sendResponse({ success: true });
+    }
+  }
+  return true; // Keep the message channel open for async response
 });
