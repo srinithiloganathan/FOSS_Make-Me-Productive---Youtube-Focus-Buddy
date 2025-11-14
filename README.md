@@ -85,11 +85,53 @@
 - **Educational Keywords**: Edit the `educationalKeywords` array in `content.js`.
 - **Motivational Messages**: Customize the `distractingKeywordMessages` object in `content.js`.
 
+### Example keyword sets (recommended starting point)
+- Entertainment keywords: short, prank, meme, trailer, reaction, vlog, funny, gaming, music video, dance, gossip, celebrity, drama, challenge
+- Educational keywords: tutorial, how to, lecture, course, lesson, explain, guide, walkthrough, lecture, study, tutorial, documentary, science, programming, math, history
+
 ## Permissions
 
 This extension requires:
 - **Storage**: To save settings and stats.
 - **Tabs**: To reload the active tab when toggling the filter.
+
+## Upcoming features
+
+Planned improvements and near-term work:
+- Add better keywords: expanded, categorized default lists (tutorials, coding, science, language), synonym expansion, and community-importable keyword packs.
+- Optional ML-assisted classifier: lightweight classifier to improve precision beyond keywords.
+- Per-channel and per-playlist whitelists/blacklists.
+- Scheduled focus sessions (pomodoro-style) and auto-enable filters during sessions.
+- Export/import productivity data (CSV) and manual backup.
+- Improved popup UI: trends, historical graphs, and configurable goals.
+- Community keyword sharing and moderation workflow (opt-in).
+- Accessibility and i18n support for non-English keywords.
+
+## Development
+
+- To test changes quickly:
+  - Update files in the project folder.
+  - In chrome://extensions reload the unpacked extension.
+- Use the console on YouTube pages (DevTools) to debug content script logs.
+
+## Privacy & Security
+
+- All processing happens locally in the browser.
+- No data is sent to external servers.
+- Uses Chrome Storage for local settings and stats only.
+
+## Troubleshooting
+
+- If filtering doesn't appear:
+  - Ensure the extension is enabled in chrome://extensions.
+  - Reload the active YouTube tab.
+  - Open DevTools console on YouTube to check for script errors.
+- If dynamic elements aren't filtered, reload the tab or ensure the content script injection matches YouTube pages in `manifest.json`.
+
+## Contributing
+
+- Contributions welcome. Please open issues or PRs.
+- Keep changes focused, update any relevant keywords and tests (if added).
 
 ## License
 
