@@ -1,0 +1,18 @@
+# Git files
+.git
+git
+.gitconfig
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Dependencies
+dist/
+build/
